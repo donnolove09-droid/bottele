@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telegram Bot Manager</title>
+<style>
+body{font-family:Arial,sans-serif;background:#0f172a;color:#e5e7eb;margin:0}.wrap{max-width:1100px;margin:auto;padding:24px}
+.card{background:#111827;border:1px solid #26354a;border-radius:16px;padding:18px;margin:14px 0}
+h1,h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+input,textarea,select,button{width:100%;box-sizing:border-box;padding:11px;margin:6px 0;border-radius:9px;border:1px solid #334155;background:#0b1220;color:#fff}
+button{cursor:pointer;background:#2563eb;border:0;font-weight:700}.danger{background:#dc2626!important}.small{color:#94a3b8;font-size:13px}
+.item{padding:10px;border:1px solid #26354a;border-radius:10px;margin:7px 0}#status{position:sticky;top:0;padding:10px;background:#020617;z-index:2}
+code{background:#020617;padding:3px 6px;border-radius:5px}
+</style></head>
+<body>
+<div id="status">Chưa kết nối</div>
+<div class="wrap">
+<h1>🤖 Telegram Bot Manager</h1>
+<p class="small">Quản lý bot, nhóm, slash commands, thông báo và lịch tự động.</p>
+
+<div class="card"><h2>⚙️ Kết nối</h2>
+<input id="key" type="password" placeholder="ADMIN_KEY"><button onclick="saveKey()">Lưu khóa</button></div>
+
+<div class="grid">
+<div class="card"><h2>➕ Thêm bot</h2>
+<input id="botName" placeholder="Tên bot"><input id="botToken" placeholder="Bot Token từ BotFather">
+<button onclick="addBot()">Thêm bot + cài commands</button></div>
+
+<div class="card"><h2>📢 Gửi ngay</h2>
+<select id="sendBot" onchange="loadChats()"></select><select id="sendChat"></select>
+<textarea id="sendMsg" rows="4" placeholder="Nội dung thông báo"></textarea><button onclick="sendNow()">Gửi thông báo</button></div>
+
+<div class="card"><h2>⏰ Lịch tự động</h2>
+<select id="schBot" onchange="loadScheduleChats()"></select><select id="schChat"></select>
+<textarea id="schMsg" rows="3" placeholder="Nội dung"></textarea><input id="interval" type="number" min="60" value="3600">
+<button onclick="addSchedule()">Tạo lịch</button></div>
+
+<div class="card"><h2>🔗 Kiểm tra nhóm</h2>
+<select id="checkBot"></select><input id="checkChat" placeholder="-1001234567890">
+<button onclick="checkChatNow()">Kiểm tra & lưu nhóm</button>
+<p class="small">Bot phải được thêm vào nhóm trước. Để /ban và /unl hoạt động, bot cần quyền quản trị phù hợp.</p></div>
+</div>
+
+<div class="card"><h2>🤖 Bot & Slash Commands</h2><div id="bots"></div></div>
+<div class="card"><h2>⏰ Lịch</h2><div id="schedules"></div></div>
+</div>
+
+<script>
+let KEY=localStorage.getItem("adminKey")||""; key.value=KEY;
+async function api(path,opt={}){opt.headers={...(opt.headers||{}),"Content-Type":"application/json","X-Admin-Key":KEY};let r=await fetch(path,opt);let d=await r.json();if(!r.ok)throw Error(d.error||d.description||"Lỗi");return d}
+function msg(s){status.textContent=s}
+function esc(x){return String(x??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function saveKey(){KEY=key.value;localStorage.setItem("adminKey",KEY);loadAll()}
+async function loadBots(){
+ try{
+  let bs=await api("/api/bots");
+  bots.innerHTML=bs.map(b=>`<div class="item"><b>${esc(b.name)}</b> — ID ${b.id}
+  <br><span class="small">Commands: /help /star /file /aov /mod /ff /ban /unl</span>
+  <button onclick="resetCommands(${b.id})">🔄 Cài lại commands</button>
+  <button class="danger" onclick="delBot(${b.id})">Xóa</button></div>`).join("");
+  for(let id of ["sendBot","schBot","checkBot"])document.getElementById(id).innerHTML=bs.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join("");
+  if(bs.length){await loadChats();await loadScheduleChats()}
+  msg("Đã tải dữ liệu")
+ }catch(e){msg(e.message)}
+}
+async function addBot(){
+ try{let d=await api("/api/bots",{method:"POST",body:JSON.stringify({name:botName.value,token:botToken.value})});
+ msg("Đã thêm @"+d.bot.username+" và cài slash commands");botName.value="";botToken.value="";loadBots()
+ }catch(e){msg(e.message)}
+}
+async function resetCommands(id){try{await api("/api/bots/"+id+"/commands",{method:"POST"});msg("Đã cài lại commands")}catch(e){msg(e.message)}}
+async function delBot(id){if(!confirm("Xóa bot?"))return;await api("/api/bots/"+id,{method:"DELETE"});loadBots()}
+async function getChats(id){return await api("/api/bots/"+id+"/chats")}
+async function loadChats(){let id=sendBot.value;if(!id)return;let cs=await getChats(id);sendChat.innerHTML=cs.map(c=>`<option value="${esc(c.chat_id)}">${esc(c.title||c.chat_id)}</option>`).join("")}
+async function loadScheduleChats(){let id=schBot.value;if(!id)return;let cs=await getChats(id);schChat.innerHTML=cs.map(c=>`<option value="${esc(c.chat_id)}">${esc(c.title||c.chat_id)}</option>`).join("")}
+async function checkChatNow(){try{let d=await api("/api/bots/"+checkBot.value+"/check-chat",{method:"POST",body:JSON.stringify({chat_id:checkChat.value})});msg("Đã lưu nhóm: "+(d.chat.title||d.chat.username||d.chat.id));loadChats();loadScheduleChats()}catch(e){msg(e.message)}}
+async function sendNow(){try{await api("/api/send",{method:"POST",body:JSON.stringify({bot_id:+sendBot.value,chat_id:sendChat.value,message:sendMsg.value})});msg("Đã gửi thông báo")}catch(e){msg(e.message)}}
+async function addSchedule(){try{await api("/api/schedules",{method:"POST",body:JSON.stringify({bot_id:+schBot.value,chat_id:schChat.value,message:schMsg.value,interval_seconds:+interval.value})});msg("Đã tạo lịch");loadSchedules()}catch(e){msg(e.message)}}
+async function loadSchedules(){try{let ss=await api("/api/schedules");schedules.innerHTML=ss.map(s=>`<div class="item"><b>${esc(s.bot_name)}</b> → ${esc(s.chat_id)}<br>${esc(s.message)}<br><span class="small">Mỗi ${s.interval_seconds}s</span> <button class="danger" onclick="delSchedule(${s.id})">Xóa</button></div>`).join("")}catch(e){msg(e.message)}}
+async function delSchedule(id){await api("/api/schedules/"+id,{method:"DELETE"});loadSchedules()}
+async function loadAll(){await loadBots();await loadSchedules()}
+loadAll();
+</script></body></html>
